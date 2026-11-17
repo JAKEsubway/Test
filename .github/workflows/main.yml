@@ -1,0 +1,75 @@
+name: Subway Surfers 1.0.0 - read-only analysis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rebuild uploaded workspace archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f subway_workspace.part1
+          test -f subway_workspace.part2
+          cat subway_workspace.part1 subway_workspace.part2 > workspace.zip
+          unzip -t workspace.zip
+          mkdir -p workspace
+          unzip -q workspace.zip -d workspace
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install ILSpy command line
+        shell: bash
+        run: |
+          dotnet tool install --global ilspycmd
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Decompile Assembly-CSharp.dll
+        shell: bash
+        run: |
+          set -euo pipefail
+          DLL="workspace/assets/bin/Data/Managed/Assembly-CSharp.dll"
+          test -f "$DLL"
+          mkdir -p output/Decompiled
+          ilspycmd -p -o output/Decompiled/Assembly-CSharp "$DLL"
+
+      - name: Create analysis summary
+        shell: bash
+        run: |
+          {
+            echo "Subway Surfers 1.0.0 - cloud decompilation"
+            echo "=========================================="
+            echo
+            echo "Unity data version:"
+            strings workspace/assets/bin/Data/data.unity3d | grep -m1 '2020.3.48f1c1' || true
+            echo
+            echo "Assembly-CSharp.dll:"
+            ls -lh workspace/assets/bin/Data/Managed/Assembly-CSharp.dll
+            echo
+            echo "Decompiled source files:"
+            find output/Decompiled -type f | wc -l
+            echo
+            echo "This is decompiled output, not original source code."
+            echo "No ARM64 APK was built by this workflow."
+          } > output/ANALYSIS_SUMMARY.txt
+
+      - name: Upload decompiled output
+        uses: actions/upload-artifact@v4
+        with:
+          name: subway-surfers-1.0.0-decompiled
+          path: output/
+          if-no-files-found: error
+          retention-days: 3
+          
